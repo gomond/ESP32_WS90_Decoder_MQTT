@@ -22,10 +22,16 @@
 #define MQTT_BROKER_URI CONFIG_WS90_MQTT_BROKER_URI
 #define MQTT_USER       CONFIG_WS90_MQTT_USERNAME
 #define MQTT_PASS       CONFIG_WS90_MQTT_PASSWORD
+#define MQTT_CLIENT_ID  CONFIG_WS90_MQTT_CLIENT_ID
 #define MQTT_STATE_TOPIC CONFIG_WS90_MQTT_STATE_TOPIC
 #define WS90_REQUIRE_EXPECTED_ID CONFIG_WS90_REQUIRE_EXPECTED_ID
 #define WS90_RADIO_DIAGNOSTICS   CONFIG_WS90_RADIO_DIAGNOSTICS
 #define WS90_DIAG_INTERVAL_MS    CONFIG_WS90_DIAG_INTERVAL_MS
+
+#ifndef CONFIG_WS90_MQTT_CLIENT_ID
+#undef MQTT_CLIENT_ID
+#define MQTT_CLIENT_ID ""
+#endif
 
 #define PIN_MISO 42
 #define PIN_MOSI 2
@@ -82,6 +88,32 @@ static spi_device_handle_t rfm_spi;
 static esp_mqtt_client_handle_t mqtt_client;
 static bool mqtt_connected = false;
 
+static const char *mqtt_connack_code_to_str(int code) {
+    switch (code) {
+        case 0:
+            return "Connection Accepted";
+        case 1:
+            return "Unacceptable Protocol Version";
+        case 2:
+            return "Identifier Rejected";
+        case 3:
+            return "Server Unavailable";
+        case 4:
+            return "Bad Username or Password";
+        case 5:
+            return "Not Authorized";
+        default:
+            return "Unknown";
+    }
+}
+
+static void mqtt_clear_discovery_topic(const char *topic) {
+    if (!mqtt_connected || mqtt_client == NULL) {
+        return;
+    }
+    esp_mqtt_client_publish(mqtt_client, topic, "", 0, 1, 1);
+}
+
 static void mqtt_publish_discovery_sensor(const char *topic,
                                           const char *name,
                                           const char *unique_id,
@@ -117,6 +149,71 @@ static void mqtt_publish_discovery_sensor(const char *topic,
              unit,
              device_class,
              state_class,
+             value_template);
+
+    esp_mqtt_client_publish(mqtt_client, topic, payload, 0, 1, 1);
+}
+
+static void mqtt_publish_discovery_text(const char *topic,
+                                        const char *name,
+                                        const char *unique_id,
+                                        const char *value_template) {
+    if (!mqtt_connected || mqtt_client == NULL) {
+        return;
+    }
+
+    char payload[768];
+    snprintf(payload,
+             sizeof(payload),
+             "{"
+             "\"name\":\"%s\"," 
+             "\"uniq_id\":\"%s\"," 
+             "\"stat_t\":\"%s\"," 
+             "\"val_tpl\":\"%s\"," 
+             "\"dev\":{"
+             "\"ids\":[\"ws90_decoder\"],"
+             "\"name\":\"WS90 Decoder\"," 
+             "\"mdl\":\"ESP32_WS90_Decoder_MQTT\"," 
+             "\"mf\":\"Custom\""
+             "}"
+             "}",
+             name,
+             unique_id,
+             MQTT_STATE_TOPIC,
+             value_template);
+
+    esp_mqtt_client_publish(mqtt_client, topic, payload, 0, 1, 1);
+}
+
+static void mqtt_publish_discovery_sensor_simple(const char *topic,
+                                                 const char *name,
+                                                 const char *unique_id,
+                                                 const char *unit,
+                                                 const char *value_template) {
+    if (!mqtt_connected || mqtt_client == NULL) {
+        return;
+    }
+
+    char payload[768];
+    snprintf(payload,
+             sizeof(payload),
+             "{"
+             "\"name\":\"%s\","
+             "\"uniq_id\":\"%s\","
+             "\"stat_t\":\"%s\","
+             "\"unit_of_meas\":\"%s\","
+             "\"val_tpl\":\"%s\","
+             "\"dev\":{"
+             "\"ids\":[\"ws90_decoder\"],"
+             "\"name\":\"WS90 Decoder\","
+             "\"mdl\":\"ESP32_WS90_Decoder_MQTT\","
+             "\"mf\":\"Custom\""
+             "}"
+             "}",
+             name,
+             unique_id,
+             MQTT_STATE_TOPIC,
+             unit,
              value_template);
 
     esp_mqtt_client_publish(mqtt_client, topic, payload, 0, 1, 1);
@@ -340,6 +437,21 @@ static uint8_t ws90_reverse8(uint8_t x) {
     return x;
 }
 
+static const char *wind_dir_to_compass_16(int wind_dir_deg) {
+    static const char *dirs[16] = {
+        "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+        "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"
+    };
+
+    int deg = wind_dir_deg % 360;
+    if (deg < 0) {
+        deg += 360;
+    }
+    int idx = (deg + 11) / 22;
+    idx %= 16;
+    return dirs[idx];
+}
+
 static void shift_left_bits_len(const uint8_t *in, uint8_t *out, uint32_t len, uint8_t bits) {
     if (bits == 0u) {
         memcpy(out, in, len);
@@ -399,13 +511,17 @@ static void mqtt_publish_discovery(void) {
                                   "measurement",
                                   "{{ value_json.wind_max_m_s }}");
 
-    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_wind_dir/config",
-                                  "WS90 Wind Direction",
-                                  "ws90_wind_dir",
-                                  "°",
-                                  "",
-                                  "measurement",
-                                  "{{ value_json.wind_dir_deg }}");
+    mqtt_publish_discovery_sensor_simple("homeassistant/sensor/ws90_wind_dir/config",
+                                         "WS90 Wind Direction",
+                                         "ws90_wind_dir",
+                                         "°",
+                                         "{{ value_json.wind_dir_deg }}");
+
+    mqtt_publish_discovery_sensor_simple("homeassistant/sensor/ws90_wind_dir_compass/config",
+                                         "WS90 Wind Direction Compass",
+                                         "ws90_wind_dir_compass",
+                                         "",
+                                         "{{ value_json.wind_dir_compass }}");
 
     mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_rain/config",
                                   "WS90 Rain",
@@ -415,13 +531,11 @@ static void mqtt_publish_discovery(void) {
                                   "measurement",
                                   "{{ value_json.rain_mm }}");
 
-    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_uv/config",
-                                  "WS90 UV Index",
-                                  "ws90_uv",
-                                  "",
-                                  "",
-                                  "measurement",
-                                  "{{ value_json.uv_index }}");
+    mqtt_publish_discovery_sensor_simple("homeassistant/sensor/ws90_uv/config",
+                                         "WS90 UV Index",
+                                         "ws90_uv",
+                                         "",
+                                         "{{ value_json.uv_index }}");
 
     mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_light/config",
                                   "WS90 Illuminance",
@@ -438,13 +552,93 @@ static void mqtt_publish_discovery(void) {
                                   "battery",
                                   "measurement",
                                   "{{ (value_json.battery_level * 100) | round(0) }}");
+
+    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_battery_mv/config",
+                                  "WS90 Battery Voltage",
+                                  "ws90_battery_mv",
+                                  "mV",
+                                  "voltage",
+                                  "measurement",
+                                  "{{ value_json.battery_mv }}");
+
+    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_supercap_v/config",
+                                  "WS90 Supercap Voltage",
+                                  "ws90_supercap_v",
+                                  "V",
+                                  "voltage",
+                                  "measurement",
+                                  "{{ value_json.supercap_v }}");
+
+    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_rain_start/config",
+                                  "WS90 Rain Start",
+                                  "ws90_rain_start",
+                                  "",
+                                  "",
+                                  "measurement",
+                                  "{{ value_json.rain_start }}");
+
+    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_firmware/config",
+                                  "WS90 Firmware",
+                                  "ws90_firmware",
+                                  "",
+                                  "",
+                                  "measurement",
+                                  "{{ value_json.firmware }}");
+
+    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_crc8/config",
+                                  "WS90 CRC8",
+                                  "ws90_crc8",
+                                  "",
+                                  "",
+                                  "measurement",
+                                  "{{ value_json.crc8 }}");
+
+    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_chk_sum/config",
+                                  "WS90 Checksum Sum",
+                                  "ws90_chk_sum",
+                                  "",
+                                  "",
+                                  "measurement",
+                                  "{{ value_json.chk_sum }}");
+
+    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_chk_byte/config",
+                                  "WS90 Checksum Byte",
+                                  "ws90_chk_byte",
+                                  "",
+                                  "",
+                                  "measurement",
+                                  "{{ value_json.chk_byte }}");
+
+    mqtt_publish_discovery_text("homeassistant/text/ws90_flags/config",
+                                "WS90 Flags",
+                                "ws90_flags",
+                                "{{ value_json.flags }}");
+
+    mqtt_publish_discovery_text("homeassistant/text/ws90_raw_hex/config",
+                                "WS90 Raw Frame",
+                                "ws90_raw_hex",
+                                "{{ value_json.raw_hex }}");
 }
 
-static void mqtt_publish_state(const char *json) {
+static void mqtt_cleanup_legacy_discovery(void) {
     if (!mqtt_connected || mqtt_client == NULL) {
         return;
     }
-    esp_mqtt_client_publish(mqtt_client, MQTT_STATE_TOPIC, json, 0, 1, 0);
+
+    mqtt_clear_discovery_topic("homeassistant/sensor/ws90_wind_dir_compass/config");
+    mqtt_clear_discovery_topic("homeassistant/sensor/ws90_flags/config");
+    mqtt_clear_discovery_topic("homeassistant/sensor/ws90_raw_hex/config");
+    mqtt_clear_discovery_topic("homeassistant/text/ws90_wind_dir_compass/config");
+}
+
+static void mqtt_publish_state(const char *json) {
+    if (mqtt_client == NULL) {
+        return;
+    }
+    int msg_id = esp_mqtt_client_publish(mqtt_client, MQTT_STATE_TOPIC, json, 0, 1, 0);
+    if (msg_id < 0) {
+        ESP_LOGW(TAG, "MQTT publish enqueue failed for state topic");
+    }
 }
 
 static bool ws90_decode_and_publish(const uint8_t *b) {
@@ -484,20 +678,27 @@ static bool ws90_decode_and_publish(const uint8_t *b) {
     int rain_start = (b[16] & 0x10) >> 4;
     int supercap_v = (b[21] & 0x3f);
     int firmware = b[29];
+    const char *wind_dir_compass = wind_dir_to_compass_16(wind_dir);
+
+    char raw_hex[(WS90_FRAME_BYTES * 2u) + 1u];
+    for (size_t i = 0; i < WS90_FRAME_BYTES; i++) {
+        snprintf(&raw_hex[i * 2u], 3u, "%02X", b[i]);
+    }
 
     char extra[31];
-    snprintf(extra, sizeof(extra), "%02x%02x%02x%02x%02x------%02x%02x%02x%02x%02x%02x%02x",
+    snprintf(extra, sizeof(extra), "%02X%02X%02X%02X%02X------%02X%02X%02X%02X%02X%02X%02X",
              b[14], b[15], b[16], b[17], b[18], b[22], b[23], b[24], b[25], b[26], b[27], b[28]);
 
-    char json[512];
+    char json[768];
     snprintf(json, sizeof(json),
-             "{\"model\":\"Fineoffset-WS90\",\"id\":\"%06X\",\"battery_level\":%.3f,\"battery_mv\":%d,\"temperature_c\":%.1f,\"humidity\":%d,\"wind_dir_deg\":%d,\"wind_avg_m_s\":%.1f,\"wind_max_m_s\":%.1f,\"uv_index\":%.1f,\"light_lux\":%.1f,\"flags\":\"%02x\",\"rain_mm\":%.1f,\"rain_start\":%d,\"supercap_v\":%.1f,\"firmware\":%d,\"extra\":\"%s\",\"mic\":\"CRC\"}",
+             "{\"model\":\"Fineoffset-WS90\",\"id\":\"%06X\",\"battery_level\":%.3f,\"battery_mv\":%d,\"temperature_c\":%.1f,\"humidity\":%d,\"wind_dir_deg\":%d,\"wind_dir_compass\":\"%s\",\"wind_avg_m_s\":%.1f,\"wind_max_m_s\":%.1f,\"uv_index\":%.1f,\"light_lux\":%.1f,\"flags\":\"%02X\",\"rain_mm\":%.1f,\"rain_start\":%d,\"supercap_v\":%.1f,\"firmware\":%d,\"extra\":\"%s\",\"raw_hex\":\"%s\",\"crc8\":%u,\"chk_sum\":%u,\"chk_byte\":%u,\"mic\":\"CRC\"}",
              id,
              (double)(battery_lvl * 0.01f),
              battery_mv,
              (double)temp_c,
              humidity,
              wind_dir,
+             wind_dir_compass,
              (double)(wind_avg * 0.1f),
              (double)(wind_max * 0.1f),
              (double)(uv_index * 0.1f),
@@ -507,7 +708,11 @@ static bool ws90_decode_and_publish(const uint8_t *b) {
              rain_start,
              (double)(supercap_v * 0.1f),
              firmware,
-             extra);
+             extra,
+             raw_hex,
+             crc,
+             chk,
+             b[31]);
 
     printf("%s\n", json);
     mqtt_publish_state(json);
@@ -656,12 +861,14 @@ static void wifi_init_sta(void) {
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data) {
     (void)handler_args;
     (void)base;
-    (void)event_data;
+
+    esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)event_data;
 
     switch ((esp_mqtt_event_id_t)event_id) {
         case MQTT_EVENT_CONNECTED:
             mqtt_connected = true;
             ESP_LOGI(TAG, "MQTT connected");
+            mqtt_cleanup_legacy_discovery();
             mqtt_publish_discovery();
             break;
         case MQTT_EVENT_DISCONNECTED:
@@ -670,6 +877,15 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             break;
         case MQTT_EVENT_ERROR:
             ESP_LOGE(TAG, "MQTT error");
+            if (event != NULL && event->error_handle != NULL) {
+                esp_mqtt_error_codes_t *err = event->error_handle;
+                ESP_LOGE(TAG,
+                         "MQTT error details: type=%d transport_sock_errno=%d connect_return_code=%d (%s)",
+                         err->error_type,
+                         err->esp_transport_sock_errno,
+                         err->connect_return_code,
+                         mqtt_connack_code_to_str(err->connect_return_code));
+            }
             break;
         default:
             break;
@@ -685,6 +901,17 @@ static void mqtt_start(void) {
         mqtt_cfg.credentials.username = MQTT_USER;
         mqtt_cfg.credentials.authentication.password = MQTT_PASS;
     }
+
+    if (strlen(MQTT_CLIENT_ID) > 0) {
+        mqtt_cfg.credentials.client_id = MQTT_CLIENT_ID;
+    }
+
+    ESP_LOGI(TAG,
+             "MQTT init: uri=%s user_set=%s pass_set=%s client_id=%s",
+             MQTT_BROKER_URI,
+             strlen(MQTT_USER) > 0 ? "yes" : "no",
+             strlen(MQTT_PASS) > 0 ? "yes" : "no",
+             strlen(MQTT_CLIENT_ID) > 0 ? MQTT_CLIENT_ID : "(auto)");
 
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
     ESP_ERROR_CHECK(esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL));
