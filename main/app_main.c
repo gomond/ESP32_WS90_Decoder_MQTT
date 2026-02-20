@@ -137,9 +137,9 @@ static void mqtt_publish_discovery_sensor(const char *topic,
              "\"state_class\":\"%s\","
              "\"val_tpl\":\"%s\","
              "\"dev\":{"
-             "\"ids\":[\"ws90_decoder\"],"
-             "\"name\":\"WS90 Decoder\","
-             "\"mdl\":\"ESP32_WS90_Decoder_MQTT\","
+             "\"ids\":[\"ws90_weather\"],"
+             "\"name\":\"WS90\","
+             "\"mdl\":\"WS90_Weather_MQTT\","
              "\"mf\":\"Custom\""
              "}"
              "}",
@@ -171,9 +171,9 @@ static void mqtt_publish_discovery_text(const char *topic,
              "\"stat_t\":\"%s\"," 
              "\"val_tpl\":\"%s\"," 
              "\"dev\":{"
-             "\"ids\":[\"ws90_decoder\"],"
-             "\"name\":\"WS90 Decoder\"," 
-             "\"mdl\":\"ESP32_WS90_Decoder_MQTT\"," 
+             "\"ids\":[\"ws90_weather\"],"
+             "\"name\":\"WS90\"," 
+             "\"mdl\":\"WS90_Weather_MQTT\"," 
              "\"mf\":\"Custom\""
              "}"
              "}",
@@ -204,9 +204,9 @@ static void mqtt_publish_discovery_sensor_simple(const char *topic,
              "\"unit_of_meas\":\"%s\","
              "\"val_tpl\":\"%s\","
              "\"dev\":{"
-             "\"ids\":[\"ws90_decoder\"],"
-             "\"name\":\"WS90 Decoder\","
-             "\"mdl\":\"ESP32_WS90_Decoder_MQTT\","
+             "\"ids\":[\"ws90_weather\"],"
+             "\"name\":\"WS90\","
+             "\"mdl\":\"WS90_Weather_MQTT\","
              "\"mf\":\"Custom\""
              "}"
              "}",
@@ -479,144 +479,144 @@ static void mqtt_publish_discovery(void) {
         return;
     }
 
-    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_temperature/config",
-                                  "WS90 Temperature",
-                                  "ws90_temp",
+    mqtt_publish_discovery_sensor("homeassistant/sensor/temperature/config",
+                                  "Temperature",
+                                  "ws90_weather_temp",
                                   "°C",
                                   "temperature",
                                   "measurement",
                                   "{{ value_json.temperature_c }}");
 
-    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_humidity/config",
-                                  "WS90 Humidity",
-                                  "ws90_humidity",
+    mqtt_publish_discovery_sensor("homeassistant/sensor/humidity/config",
+                                  "Humidity",
+                                  "ws90_weather_humidity",
                                   "%",
                                   "humidity",
                                   "measurement",
                                   "{{ value_json.humidity }}");
 
-    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_wind_avg/config",
-                                  "WS90 Wind Average",
-                                  "ws90_wind_avg",
+    mqtt_publish_discovery_sensor("homeassistant/sensor/wind_avg/config",
+                                  "Wind Average",
+                                  "ws90_weather_wind_avg",
                                   "m/s",
                                   "wind_speed",
                                   "measurement",
                                   "{{ value_json.wind_avg_m_s }}");
 
-    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_wind_max/config",
-                                  "WS90 Wind Gust",
-                                  "ws90_wind_max",
+    mqtt_publish_discovery_sensor("homeassistant/sensor/wind_max/config",
+                                  "Wind Gust",
+                                  "ws90_weather_wind_max",
                                   "m/s",
                                   "wind_speed",
                                   "measurement",
                                   "{{ value_json.wind_max_m_s }}");
 
-    mqtt_publish_discovery_sensor_simple("homeassistant/sensor/ws90_wind_dir/config",
-                                         "WS90 Wind Direction",
-                                         "ws90_wind_dir",
+    mqtt_publish_discovery_sensor_simple("homeassistant/sensor/wind_dir/config",
+                                         "Wind Direction",
+                                         "ws90_weather_wind_dir",
                                          "°",
                                          "{{ value_json.wind_dir_deg }}");
 
-    mqtt_publish_discovery_sensor_simple("homeassistant/sensor/ws90_wind_dir_compass/config",
-                                         "WS90 Wind Direction Compass",
-                                         "ws90_wind_dir_compass",
+    mqtt_publish_discovery_sensor_simple("homeassistant/sensor/wind_dir_compass/config",
+                                         "Wind Direction Compass",
+                                         "ws90_weather_wind_dir_compass",
                                          "",
                                          "{{ value_json.wind_dir_compass }}");
 
-    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_rain/config",
-                                  "WS90 Rain",
-                                  "ws90_rain",
+    mqtt_publish_discovery_sensor("homeassistant/sensor/rain/config",
+                                  "Rain",
+                                  "ws90_weather_rain",
                                   "mm",
                                   "precipitation",
                                   "measurement",
                                   "{{ value_json.rain_mm }}");
 
-    mqtt_publish_discovery_sensor_simple("homeassistant/sensor/ws90_uv/config",
-                                         "WS90 UV Index",
-                                         "ws90_uv",
+    mqtt_publish_discovery_sensor_simple("homeassistant/sensor/uv/config",
+                                         "UV Index",
+                                         "ws90_weather_uv",
                                          "",
                                          "{{ value_json.uv_index }}");
 
-    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_light/config",
-                                  "WS90 Illuminance",
-                                  "ws90_light",
+    mqtt_publish_discovery_sensor("homeassistant/sensor/light/config",
+                                  "Illuminance",
+                                  "ws90_weather_light",
                                   "lx",
                                   "illuminance",
                                   "measurement",
                                   "{{ value_json.light_lux }}");
 
-    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_battery/config",
-                                  "WS90 Battery",
-                                  "ws90_battery",
+    mqtt_publish_discovery_sensor("homeassistant/sensor/battery/config",
+                                  "Battery",
+                                  "ws90_weather_battery",
                                   "%",
                                   "battery",
                                   "measurement",
                                   "{{ (value_json.battery_level * 100) | round(0) }}");
 
-    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_battery_mv/config",
-                                  "WS90 Battery Voltage",
-                                  "ws90_battery_mv",
+    mqtt_publish_discovery_sensor("homeassistant/sensor/battery_mv/config",
+                                  "Battery Voltage",
+                                  "ws90_weather_battery_mv",
                                   "mV",
                                   "voltage",
                                   "measurement",
                                   "{{ value_json.battery_mv }}");
 
-    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_supercap_v/config",
-                                  "WS90 Supercap Voltage",
-                                  "ws90_supercap_v",
+    mqtt_publish_discovery_sensor("homeassistant/sensor/supercap_v/config",
+                                  "Supercap Voltage",
+                                  "ws90_weather_supercap_v",
                                   "V",
                                   "voltage",
                                   "measurement",
                                   "{{ value_json.supercap_v }}");
 
-    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_rain_start/config",
-                                  "WS90 Rain Start",
-                                  "ws90_rain_start",
+    mqtt_publish_discovery_sensor("homeassistant/sensor/rain_start/config",
+                                  "Rain Start",
+                                  "ws90_weather_rain_start",
                                   "",
                                   "",
                                   "measurement",
                                   "{{ value_json.rain_start }}");
 
-    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_firmware/config",
-                                  "WS90 Firmware",
-                                  "ws90_firmware",
+    mqtt_publish_discovery_sensor("homeassistant/sensor/firmware/config",
+                                  "Firmware",
+                                  "ws90_weather_firmware",
                                   "",
                                   "",
                                   "measurement",
                                   "{{ value_json.firmware }}");
 
-    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_crc8/config",
-                                  "WS90 CRC8",
-                                  "ws90_crc8",
+    mqtt_publish_discovery_sensor("homeassistant/sensor/crc8/config",
+                                  "CRC8",
+                                  "ws90_weather_crc8",
                                   "",
                                   "",
                                   "measurement",
                                   "{{ value_json.crc8 }}");
 
-    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_chk_sum/config",
-                                  "WS90 Checksum Sum",
-                                  "ws90_chk_sum",
+    mqtt_publish_discovery_sensor("homeassistant/sensor/chk_sum/config",
+                                  "Checksum Sum",
+                                  "ws90_weather_chk_sum",
                                   "",
                                   "",
                                   "measurement",
                                   "{{ value_json.chk_sum }}");
 
-    mqtt_publish_discovery_sensor("homeassistant/sensor/ws90_chk_byte/config",
-                                  "WS90 Checksum Byte",
-                                  "ws90_chk_byte",
+    mqtt_publish_discovery_sensor("homeassistant/sensor/chk_byte/config",
+                                  "Checksum Byte",
+                                  "ws90_weather_chk_byte",
                                   "",
                                   "",
                                   "measurement",
                                   "{{ value_json.chk_byte }}");
 
-    mqtt_publish_discovery_text("homeassistant/text/ws90_flags/config",
-                                "WS90 Flags",
-                                "ws90_flags",
+    mqtt_publish_discovery_text("homeassistant/text/flags/config",
+                                "Flags",
+                                "ws90_weather_flags",
                                 "{{ value_json.flags }}");
 
-    mqtt_publish_discovery_text("homeassistant/text/ws90_raw_hex/config",
-                                "WS90 Raw Frame",
-                                "ws90_raw_hex",
+    mqtt_publish_discovery_text("homeassistant/text/raw_hex/config",
+                                "Raw Frame",
+                                "ws90_weather_raw_hex",
                                 "{{ value_json.raw_hex }}");
 }
 
@@ -691,7 +691,7 @@ static bool ws90_decode_and_publish(const uint8_t *b) {
 
     char json[768];
     snprintf(json, sizeof(json),
-             "{\"model\":\"Fineoffset-WS90\",\"id\":\"%06X\",\"battery_level\":%.3f,\"battery_mv\":%d,\"temperature_c\":%.1f,\"humidity\":%d,\"wind_dir_deg\":%d,\"wind_dir_compass\":\"%s\",\"wind_avg_m_s\":%.1f,\"wind_max_m_s\":%.1f,\"uv_index\":%.1f,\"light_lux\":%.1f,\"flags\":\"%02X\",\"rain_mm\":%.1f,\"rain_start\":%d,\"supercap_v\":%.1f,\"firmware\":%d,\"extra\":\"%s\",\"raw_hex\":\"%s\",\"crc8\":%u,\"chk_sum\":%u,\"chk_byte\":%u,\"mic\":\"CRC\"}",
+             "{\"model\":\"Ecowitt WS90\",\"id\":\"%06X\",\"battery_level\":%.3f,\"battery_mv\":%d,\"temperature_c\":%.1f,\"humidity\":%d,\"wind_dir_deg\":%d,\"wind_dir_compass\":\"%s\",\"wind_avg_m_s\":%.1f,\"wind_max_m_s\":%.1f,\"uv_index\":%.1f,\"light_lux\":%.1f,\"flags\":\"%02X\",\"rain_mm\":%.1f,\"rain_start\":%d,\"supercap_v\":%.1f,\"firmware\":%d,\"extra\":\"%s\",\"raw_hex\":\"%s\",\"crc8\":%u,\"chk_sum\":%u,\"chk_byte\":%u,\"mic\":\"CRC\"}",
              id,
              (double)(battery_lvl * 0.01f),
              battery_mv,

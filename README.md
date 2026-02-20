@@ -27,6 +27,7 @@ Under `WS90 MQTT Configuration`:
 - `WS90_MQTT_BROKER_URI`
 - `WS90_MQTT_USERNAME` (optional)
 - `WS90_MQTT_PASSWORD` (optional)
+- `WS90_MQTT_CLIENT_ID` (recommended when broker ACLs require fixed client IDs)
 - `WS90_MQTT_STATE_TOPIC`
 
 GPIO pin constants for SPI + RFM69 reset/IRQ lines are still in `main/app_main.c`.

@@ -20,6 +20,10 @@ config WS90_MQTT_PASSWORD
     string "MQTT Password"
     default ""
 
+config WS90_MQTT_CLIENT_ID
+    string "MQTT Client ID"
+    default "ws90-decoder"
+
 config WS90_MQTT_STATE_TOPIC
     string "MQTT State Topic"
     default "ws90/state"
