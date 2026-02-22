@@ -14,7 +14,7 @@ ESP32 packet-mode WS90 decoder with MQTT publishing for Home Assistant.
 
 1. Install ESP-IDF (v5.x recommended).
 2. In this folder, run:
-   - `idf.py set-target esp32s3`
+   - `idf.py set-target esp32`
    - `idf.py menuconfig` (set Wi-Fi/MQTT values)
    - `idf.py build flash monitor`
 
@@ -29,5 +29,13 @@ Under `WS90 MQTT Configuration`:
 - `WS90_MQTT_PASSWORD` (optional)
 - `WS90_MQTT_CLIENT_ID` (recommended when broker ACLs require fixed client IDs)
 - `WS90_MQTT_STATE_TOPIC`
-
-GPIO pin constants for SPI + RFM69 reset/IRQ lines are still in `main/app_main.c`.
+- `WS90_PIN_MISO`
+- `WS90_PIN_MOSI`
+- `WS90_PIN_SCK`
+- `WS90_PIN_CS`
+- `WS90_PIN_RST`
+- `WS90_DISPLAY_ENABLE`
+- `WS90_DISPLAY_I2C_PORT`
+- `WS90_DISPLAY_SDA`
+- `WS90_DISPLAY_SCL`
+- `WS90_DISPLAY_ADDR`

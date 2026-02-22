@@ -8,6 +8,7 @@
 #include "freertos/event_groups.h"
 
 #include "esp_event.h"
+#include "esp_check.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "nvs_flash.h"
@@ -15,6 +16,7 @@
 
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
+#include "driver/i2c.h"
 #include "esp_wifi.h"
 
 #define WIFI_SSID       CONFIG_WS90_WIFI_SSID
@@ -28,16 +30,53 @@
 #define WS90_RADIO_DIAGNOSTICS   CONFIG_WS90_RADIO_DIAGNOSTICS
 #define WS90_DIAG_INTERVAL_MS    CONFIG_WS90_DIAG_INTERVAL_MS
 
+#ifndef CONFIG_WS90_PIN_MISO
+#define CONFIG_WS90_PIN_MISO 19
+#endif
+#ifndef CONFIG_WS90_PIN_MOSI
+#define CONFIG_WS90_PIN_MOSI 27
+#endif
+#ifndef CONFIG_WS90_PIN_SCK
+#define CONFIG_WS90_PIN_SCK 5
+#endif
+#ifndef CONFIG_WS90_PIN_CS
+#define CONFIG_WS90_PIN_CS 18
+#endif
+#ifndef CONFIG_WS90_PIN_RST
+#define CONFIG_WS90_PIN_RST 14
+#endif
+
+#ifndef CONFIG_WS90_DISPLAY_ENABLE
+#define CONFIG_WS90_DISPLAY_ENABLE 1
+#endif
+#ifndef CONFIG_WS90_DISPLAY_I2C_PORT
+#define CONFIG_WS90_DISPLAY_I2C_PORT 0
+#endif
+#ifndef CONFIG_WS90_DISPLAY_SDA
+#define CONFIG_WS90_DISPLAY_SDA 21
+#endif
+#ifndef CONFIG_WS90_DISPLAY_SCL
+#define CONFIG_WS90_DISPLAY_SCL 22
+#endif
+#ifndef CONFIG_WS90_DISPLAY_ADDR
+#define CONFIG_WS90_DISPLAY_ADDR 0x3C
+#endif
+
+#define PIN_MISO                CONFIG_WS90_PIN_MISO
+#define PIN_MOSI                CONFIG_WS90_PIN_MOSI
+#define PIN_SCK                 CONFIG_WS90_PIN_SCK
+#define PIN_CS                  CONFIG_WS90_PIN_CS
+#define PIN_RST                 CONFIG_WS90_PIN_RST
+
+#define DISPLAY_I2C_PORT        CONFIG_WS90_DISPLAY_I2C_PORT
+#define DISPLAY_SDA             CONFIG_WS90_DISPLAY_SDA
+#define DISPLAY_SCL             CONFIG_WS90_DISPLAY_SCL
+#define DISPLAY_ADDR            CONFIG_WS90_DISPLAY_ADDR
+
 #ifndef CONFIG_WS90_MQTT_CLIENT_ID
 #undef MQTT_CLIENT_ID
 #define MQTT_CLIENT_ID ""
 #endif
-
-#define PIN_MISO 42
-#define PIN_MOSI 2
-#define PIN_SCK  1
-#define PIN_CS   41
-#define PIN_RST  4
 
 #define RFM69_REG_FIFO          0x00
 #define RFM69_REG_OPMODE        0x01
@@ -80,6 +119,14 @@
 #define WS90_EXPECTED_ID       0x00C0E4u
 #define HEARTBEAT_IDLE_MS      10000u
 
+#define OLED_WIDTH             128u
+#define OLED_HEIGHT            64u
+#define OLED_PAGES             (OLED_HEIGHT / 8u)
+#define OLED_FB_SIZE           (OLED_WIDTH * OLED_PAGES)
+#define OLED_GLYPH_W           3u
+#define OLED_GLYPH_H           5u
+#define OLED_FONT_SCALE        2u
+
 static const char *TAG = "WS90_MQTT";
 static EventGroupHandle_t wifi_event_group;
 static const int WIFI_CONNECTED_BIT = BIT0;
@@ -87,6 +134,11 @@ static const int WIFI_CONNECTED_BIT = BIT0;
 static spi_device_handle_t rfm_spi;
 static esp_mqtt_client_handle_t mqtt_client;
 static bool mqtt_connected = false;
+
+#if CONFIG_WS90_DISPLAY_ENABLE
+static bool oled_ready = false;
+static uint8_t oled_fb[OLED_FB_SIZE];
+#endif
 
 static const char *mqtt_connack_code_to_str(int code) {
     switch (code) {
@@ -452,6 +504,203 @@ static const char *wind_dir_to_compass_16(int wind_dir_deg) {
     return dirs[idx];
 }
 
+#if CONFIG_WS90_DISPLAY_ENABLE
+static esp_err_t oled_send(uint8_t control, const uint8_t *data, size_t len) {
+    uint8_t packet[17];
+    while (len > 0) {
+        size_t chunk = (len > 16u) ? 16u : len;
+        packet[0] = control;
+        memcpy(&packet[1], data, chunk);
+        esp_err_t err = i2c_master_write_to_device(DISPLAY_I2C_PORT,
+                                                   DISPLAY_ADDR,
+                                                   packet,
+                                                   chunk + 1u,
+                                                   pdMS_TO_TICKS(100));
+        if (err != ESP_OK) {
+            return err;
+        }
+        data += chunk;
+        len -= chunk;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t oled_cmd(uint8_t cmd) {
+    return oled_send(0x00u, &cmd, 1u);
+}
+
+static void oled_clear(void) {
+    memset(oled_fb, 0, sizeof(oled_fb));
+}
+
+static void oled_draw_pixel(uint8_t x, uint8_t y) {
+    if (x >= OLED_WIDTH || y >= OLED_HEIGHT) {
+        return;
+    }
+    oled_fb[x + ((y / 8u) * OLED_WIDTH)] |= (uint8_t)(1u << (y % 8u));
+}
+
+static bool glyph_3x5(char c, uint8_t rows[5]) {
+    switch (c) {
+        case '0': rows[0]=0x7; rows[1]=0x5; rows[2]=0x5; rows[3]=0x5; rows[4]=0x7; return true;
+        case '1': rows[0]=0x2; rows[1]=0x6; rows[2]=0x2; rows[3]=0x2; rows[4]=0x7; return true;
+        case '2': rows[0]=0x7; rows[1]=0x1; rows[2]=0x7; rows[3]=0x4; rows[4]=0x7; return true;
+        case '3': rows[0]=0x7; rows[1]=0x1; rows[2]=0x7; rows[3]=0x1; rows[4]=0x7; return true;
+        case '4': rows[0]=0x5; rows[1]=0x5; rows[2]=0x7; rows[3]=0x1; rows[4]=0x1; return true;
+        case '5': rows[0]=0x7; rows[1]=0x4; rows[2]=0x7; rows[3]=0x1; rows[4]=0x7; return true;
+        case '6': rows[0]=0x7; rows[1]=0x4; rows[2]=0x7; rows[3]=0x5; rows[4]=0x7; return true;
+        case '7': rows[0]=0x7; rows[1]=0x1; rows[2]=0x1; rows[3]=0x1; rows[4]=0x1; return true;
+        case '8': rows[0]=0x7; rows[1]=0x5; rows[2]=0x7; rows[3]=0x5; rows[4]=0x7; return true;
+        case '9': rows[0]=0x7; rows[1]=0x5; rows[2]=0x7; rows[3]=0x1; rows[4]=0x7; return true;
+        case 'C': rows[0]=0x7; rows[1]=0x4; rows[2]=0x4; rows[3]=0x4; rows[4]=0x7; return true;
+        case 'D': rows[0]=0x6; rows[1]=0x5; rows[2]=0x5; rows[3]=0x5; rows[4]=0x6; return true;
+        case 'E': rows[0]=0x7; rows[1]=0x4; rows[2]=0x7; rows[3]=0x4; rows[4]=0x7; return true;
+        case 'H': rows[0]=0x5; rows[1]=0x5; rows[2]=0x7; rows[3]=0x5; rows[4]=0x5; return true;
+        case 'M': rows[0]=0x5; rows[1]=0x7; rows[2]=0x7; rows[3]=0x5; rows[4]=0x5; return true;
+        case 'N': rows[0]=0x5; rows[1]=0x7; rows[2]=0x7; rows[3]=0x7; rows[4]=0x5; return true;
+        case 'S': rows[0]=0x7; rows[1]=0x4; rows[2]=0x7; rows[3]=0x1; rows[4]=0x7; return true;
+        case 'T': rows[0]=0x7; rows[1]=0x2; rows[2]=0x2; rows[3]=0x2; rows[4]=0x2; return true;
+        case 'W': rows[0]=0x5; rows[1]=0x5; rows[2]=0x7; rows[3]=0x7; rows[4]=0x5; return true;
+        case '.': rows[0]=0x0; rows[1]=0x0; rows[2]=0x0; rows[3]=0x0; rows[4]=0x2; return true;
+        case ':': rows[0]=0x0; rows[1]=0x2; rows[2]=0x0; rows[3]=0x2; rows[4]=0x0; return true;
+        case '%': rows[0]=0x5; rows[1]=0x1; rows[2]=0x2; rows[3]=0x4; rows[4]=0x5; return true;
+        case '/': rows[0]=0x1; rows[1]=0x1; rows[2]=0x2; rows[3]=0x4; rows[4]=0x4; return true;
+        case '-': rows[0]=0x0; rows[1]=0x0; rows[2]=0x7; rows[3]=0x0; rows[4]=0x0; return true;
+        case ' ': rows[0]=0x0; rows[1]=0x0; rows[2]=0x0; rows[3]=0x0; rows[4]=0x0; return true;
+        default: return false;
+    }
+}
+
+static void oled_draw_char3x5_scaled(uint8_t x, uint8_t y, char c, uint8_t scale) {
+    uint8_t rows[5];
+    if (!glyph_3x5(c, rows)) {
+        c = ' ';
+        (void)glyph_3x5(c, rows);
+    }
+
+    for (uint8_t row = 0; row < OLED_GLYPH_H; row++) {
+        for (uint8_t col = 0; col < OLED_GLYPH_W; col++) {
+            if (rows[row] & (uint8_t)(1u << (2u - col))) {
+                for (uint8_t sy = 0; sy < scale; sy++) {
+                    for (uint8_t sx = 0; sx < scale; sx++) {
+                        oled_draw_pixel((uint8_t)(x + (col * scale) + sx),
+                                        (uint8_t)(y + (row * scale) + sy));
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void oled_draw_text3x5_scaled(uint8_t x, uint8_t y, const char *text, uint8_t scale) {
+    uint8_t char_w = (uint8_t)(OLED_GLYPH_W * scale);
+    uint8_t step = (uint8_t)(char_w + scale);
+    while (*text != '\0' && x <= (uint8_t)(OLED_WIDTH - char_w)) {
+        oled_draw_char3x5_scaled(x, y, *text, scale);
+        x = (uint8_t)(x + step);
+        text++;
+    }
+}
+
+static esp_err_t oled_flush(void) {
+    for (uint8_t page = 0; page < OLED_PAGES; page++) {
+        ESP_RETURN_ON_ERROR(oled_cmd((uint8_t)(0xB0u | page)), TAG, "oled page set failed");
+        ESP_RETURN_ON_ERROR(oled_cmd(0x00u), TAG, "oled col low failed");
+        ESP_RETURN_ON_ERROR(oled_cmd(0x10u), TAG, "oled col high failed");
+        ESP_RETURN_ON_ERROR(oled_send(0x40u, &oled_fb[page * OLED_WIDTH], OLED_WIDTH), TAG, "oled data failed");
+    }
+    return ESP_OK;
+}
+
+static esp_err_t ws90_display_init(void) {
+    i2c_config_t conf = {
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = DISPLAY_SDA,
+        .scl_io_num = DISPLAY_SCL,
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+        .master.clk_speed = 400000,
+    };
+
+    ESP_RETURN_ON_ERROR(i2c_param_config(DISPLAY_I2C_PORT, &conf), TAG, "i2c param config failed");
+
+    esp_err_t install_err = i2c_driver_install(DISPLAY_I2C_PORT, conf.mode, 0, 0, 0);
+    if (install_err != ESP_OK && install_err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(TAG, "i2c driver install failed: %s", esp_err_to_name(install_err));
+        return install_err;
+    }
+
+    const uint8_t init_seq[] = {
+        0xAE, 0x20, 0x00, 0xB0, 0xC8, 0x00, 0x10, 0x40,
+        0x81, 0x7F, 0xA1, 0xA6, 0xA8, 0x3F, 0xD3, 0x00,
+        0xD5, 0x80, 0xD9, 0xF1, 0xDA, 0x12, 0xDB, 0x40,
+        0x8D, 0x14, 0xAF
+    };
+
+    for (size_t i = 0; i < sizeof(init_seq); i++) {
+        ESP_RETURN_ON_ERROR(oled_cmd(init_seq[i]), TAG, "oled init cmd failed");
+    }
+
+    oled_clear();
+    ESP_RETURN_ON_ERROR(oled_flush(), TAG, "oled initial flush failed");
+    oled_ready = true;
+    ESP_LOGI(TAG,
+             "SSD1306 ready on I2C port %d, SDA=%d, SCL=%d, addr=0x%02X",
+             DISPLAY_I2C_PORT,
+             DISPLAY_SDA,
+             DISPLAY_SCL,
+             DISPLAY_ADDR);
+    return ESP_OK;
+}
+
+static void ws90_display_update(float temp_c,
+                                int humidity,
+                                int wind_dir_deg,
+                                const char *wind_dir_compass,
+                                float wind_speed_m_s) {
+    if (!oled_ready) {
+        return;
+    }
+
+    char line1[22];
+    char line2[22];
+    char line3[22];
+    char line4[22];
+
+    snprintf(line1, sizeof(line1), "T%.1fC", (double)temp_c);
+    snprintf(line2, sizeof(line2), "H%d%%", humidity);
+    snprintf(line3, sizeof(line3), "WD%d%s", wind_dir_deg, wind_dir_compass);
+    snprintf(line4, sizeof(line4), "WS%.1f", (double)wind_speed_m_s);
+
+    oled_clear();
+    oled_draw_text3x5_scaled(0, 0, line1, OLED_FONT_SCALE);
+    oled_draw_text3x5_scaled(0, 16, line2, OLED_FONT_SCALE);
+    oled_draw_text3x5_scaled(0, 32, line3, OLED_FONT_SCALE);
+    oled_draw_text3x5_scaled(0, 48, line4, OLED_FONT_SCALE);
+
+    esp_err_t err = oled_flush();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "oled flush failed: %s", esp_err_to_name(err));
+    }
+}
+#else
+static esp_err_t ws90_display_init(void) {
+    return ESP_OK;
+}
+
+static void ws90_display_update(float temp_c,
+                                int humidity,
+                                int wind_dir_deg,
+                                const char *wind_dir_compass,
+                                float wind_speed_m_s) {
+    (void)temp_c;
+    (void)humidity;
+    (void)wind_dir_deg;
+    (void)wind_dir_compass;
+    (void)wind_speed_m_s;
+}
+#endif
+
 static void shift_left_bits_len(const uint8_t *in, uint8_t *out, uint32_t len, uint8_t bits) {
     if (bits == 0u) {
         memcpy(out, in, len);
@@ -679,6 +928,12 @@ static bool ws90_decode_and_publish(const uint8_t *b) {
     int supercap_v = (b[21] & 0x3f);
     int firmware = b[29];
     const char *wind_dir_compass = wind_dir_to_compass_16(wind_dir);
+
+    ws90_display_update(temp_c,
+                        humidity,
+                        wind_dir,
+                        wind_dir_compass,
+                        (float)(wind_avg * 0.1f));
 
     char raw_hex[(WS90_FRAME_BYTES * 2u) + 1u];
     for (size_t i = 0; i < WS90_FRAME_BYTES; i++) {
@@ -1032,6 +1287,11 @@ void app_main(void) {
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
+    esp_err_t display_err = ws90_display_init();
+    if (display_err != ESP_OK) {
+        ESP_LOGW(TAG, "Display init failed, continuing without OLED updates");
+    }
 
     if (wifi_ready) {
         wifi_init_sta();

@@ -42,4 +42,57 @@ config WS90_DIAG_INTERVAL_MS
     default 3000
     depends on WS90_RADIO_DIAGNOSTICS
 
+config WS90_PIN_MISO
+    int "RFM69 SPI MISO GPIO"
+    range 0 48
+    default 19
+
+config WS90_PIN_MOSI
+    int "RFM69 SPI MOSI GPIO"
+    range 0 48
+    default 27
+
+config WS90_PIN_SCK
+    int "RFM69 SPI SCK GPIO"
+    range 0 48
+    default 5
+
+config WS90_PIN_CS
+    int "RFM69 SPI CS GPIO"
+    range 0 48
+    default 18
+
+config WS90_PIN_RST
+    int "RFM69 reset GPIO"
+    range 0 48
+    default 14
+
+config WS90_DISPLAY_ENABLE
+    bool "Enable onboard SSD1306 display"
+    default y
+
+config WS90_DISPLAY_I2C_PORT
+    int "Display I2C port"
+    range 0 1
+    default 0
+    depends on WS90_DISPLAY_ENABLE
+
+config WS90_DISPLAY_SDA
+    int "Display I2C SDA GPIO"
+    range 0 48
+    default 21
+    depends on WS90_DISPLAY_ENABLE
+
+config WS90_DISPLAY_SCL
+    int "Display I2C SCL GPIO"
+    range 0 48
+    default 22
+    depends on WS90_DISPLAY_ENABLE
+
+config WS90_DISPLAY_ADDR
+    hex "SSD1306 I2C address"
+    range 0x3C 0x3D
+    default 0x3C
+    depends on WS90_DISPLAY_ENABLE
+
 endmenu
