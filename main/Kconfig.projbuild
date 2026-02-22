@@ -24,6 +24,18 @@ config WS90_MQTT_CLIENT_ID
     string "MQTT Client ID"
     default "ws90-decoder"
 
+config WS90_MQTT_TLS_SKIP_VERIFY
+    bool "Skip TLS certificate hostname (CN) verification"
+    default n
+    help
+        When enabled, the MQTT client skips the TLS certificate common-name
+        (hostname) check when connecting via mqtts://. The certificate chain
+        is still validated against the CA store built into the firmware.
+        Enable this when connecting to cloud or subscription MQTT brokers whose
+        certificate CN does not exactly match the broker URI hostname. This is
+        insecure (man-in-the-middle risk) and should only be used on trusted
+        networks or for development purposes.
+
 config WS90_MQTT_STATE_TOPIC
     string "MQTT State Topic"
     default "ws90/state"

@@ -1104,7 +1104,10 @@ static void wifi_init_sta(void) {
     wifi_config_t wifi_config = {0};
     snprintf((char *)wifi_config.sta.ssid, sizeof(wifi_config.sta.ssid), "%s", WIFI_SSID);
     snprintf((char *)wifi_config.sta.password, sizeof(wifi_config.sta.password), "%s", WIFI_PASS);
-    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    wifi_config.sta.threshold.authmode = (strlen(WIFI_PASS) > 0) ? WIFI_AUTH_WPA_WPA2_PSK : WIFI_AUTH_OPEN;
+    if (strlen(WIFI_PASS) == 0) {
+        ESP_LOGW(TAG, "Wi-Fi password is empty; connecting to open (unsecured) network");
+    }
     wifi_config.sta.pmf_cfg.capable = true;
     wifi_config.sta.pmf_cfg.required = false;
 
@@ -1152,6 +1155,16 @@ static void mqtt_start(void) {
         .broker.address.uri = MQTT_BROKER_URI,
     };
 
+#if CONFIG_WS90_MQTT_TLS_SKIP_VERIFY
+    /* Skip hostname/CN check so mqtts:// connections succeed even when the
+     * broker certificate CN does not exactly match the URI hostname.
+     * Note: the TLS certificate *chain* is still validated against the CA
+     * store built into the firmware.  For brokers that use self-signed or
+     * untrusted certificates a CA certificate must also be provided, or the
+     * ESP-IDF certificate bundle must be enabled in SDK configuration. */
+    mqtt_cfg.broker.verification.skip_cert_common_name_check = true;
+#endif
+
     if (strlen(MQTT_USER) > 0) {
         mqtt_cfg.credentials.username = MQTT_USER;
         mqtt_cfg.credentials.authentication.password = MQTT_PASS;
@@ -1162,11 +1175,17 @@ static void mqtt_start(void) {
     }
 
     ESP_LOGI(TAG,
-             "MQTT init: uri=%s user_set=%s pass_set=%s client_id=%s",
+             "MQTT init: uri=%s user_set=%s pass_set=%s client_id=%s tls_skip_verify=%s",
              MQTT_BROKER_URI,
              strlen(MQTT_USER) > 0 ? "yes" : "no",
              strlen(MQTT_PASS) > 0 ? "yes" : "no",
-             strlen(MQTT_CLIENT_ID) > 0 ? MQTT_CLIENT_ID : "(auto)");
+             strlen(MQTT_CLIENT_ID) > 0 ? MQTT_CLIENT_ID : "(auto)",
+#if CONFIG_WS90_MQTT_TLS_SKIP_VERIFY
+             "yes"
+#else
+             "no"
+#endif
+             );
 
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
     ESP_ERROR_CHECK(esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL));
